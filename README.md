@@ -51,8 +51,14 @@ El modelo seleccionado fue la regresión dinámica con tendencia lineal, estacio
 
 ## Archivos del repositorio
 
-- `Proyecto_Series_Temporales.Rmd`: código reproducible de la investigación.
-- `Datos_turismo_2009_2025.csv`: datos utilizados en el estudio.
+- `Proyecto_Series_Temporales.Rmd`: código reproducible
+  del análisis estadístico.
+- `Datos_turismo_2009_2025.csv`: datos utilizados
+  en la investigación.
+- `Articulo/main.tex`: código fuente LaTeX del artículo.
+- `Articulo/`: figuras y recursos necesarios para
+  la compilación del documento.
+- `Articulo/Articulo.pdf`: artículo científico final.
 
 ## Reproducibilidad
 
@@ -67,3 +73,22 @@ El análisis se desarrolló utilizando R versión 4.5.1 y los siguientes paquete
 Para reproducir el análisis, se debe descargar el archivo R Markdown, abrirlo en RStudio, instalar los paquetes requeridos y ejecutar la opción **Knit**.
 
 Los datos se encuentran incorporados directamente en el código, por lo que no se requiere importar archivos externos para ejecutar el análisis.
+
+## Compilación del artículo científico
+
+El artículo científico fue elaborado en LaTeX mediante
+la plataforma Overleaf.
+
+Para reproducir el documento PDF:
+
+1. Descargar la carpeta `Articulo` del repositorio.
+2. Importar sus archivos en un proyecto de Overleaf.
+3. Establecer `main.tex` como documento principal.
+4. Compilar el documento.
+
+Las figuras utilizadas en el artículo se encuentran
+incluidas en el repositorio. El código R Markdown
+permite reproducir el análisis estadístico, las tablas
+y los gráficos de la investigación.
+
+
