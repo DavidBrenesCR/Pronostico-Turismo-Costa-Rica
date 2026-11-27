@@ -1,0 +1,799 @@
+
+# Configuración
+
+Datos transcritos directamente en R de los registros publicados por el Instituto Costarricense de Turismo (ICT), suministrados por la Dirección General de Migración y Extranjería. Página de referencia: <https://app.powerbi.com/view?r=eyJrIjoiZGFjYTI5NTAtYmRiNy00ZjQ2LTk5ZDYtZGY2N2Q0YWNjNzcyIiwidCI6ImQwN2I2NTM1LTFkZGMtNDA2YS04MzQxLTBiMGEzMDlkNDExNSIsImMiOjR9>. No se requiere importar el CSV adjunto.
+
+```{r}
+# Instalar previamente los paquetes faltantes, si corresponde.
+library(ggplot2)
+library(forecast)
+library(fpp2)
+library(astsa)
+library(tseries)
+library(scales)
+library(grid)
+library(patchwork)
+library(tidyr)
+library(dplyr)
+dir.create("Figuras", showWarnings = FALSE)
+dir.create("Resultados", showWarnings = FALSE)
+```
+
+# Datos y análisis exploratorio
+
+```{r}
+base <- data.frame(
+  Anio = factor(2009:2025),
+  Ene = c(129273, 138329, 152344, 158245, 161316, 175798, 183381, 211630, 213312, 227694, 248754, 261658, 60619, 169585, 240487, 270712, 266675),
+  Feb = c(119916, 139530, 148675, 160575, 160951, 175379, 184733, 217973, 221288, 235830, 250939, 276970, 54745, 184358, 250038, 291152, 270810),
+  Mar = c(134945, 155451, 165018, 176825, 180701, 190475, 200096, 230251, 243112, 262313, 276036, 127201, 88391, 225411, 266578, 322400, 312844),
+  Abr = c(110368, 114292, 121703, 124345, 127948, 143266, 151877, 173423, 195909, 194717, 198989, 505, 85846, 194181, 210717, 221573, 231678),
+  May = c(93163, 101794, 97704, 106400, 110869, 119959, 122679, 147770, 154734, 164902, 164992, 517, 90321, 160944, 168248, 199154, 189881),
+  Jun = c(112585, 119332, 121207, 130282, 137189, 141226, 145035, 172759, 182709, 193666, 196977, 625, 117527, 186097, 202235, 227452, 217120),
+  Jul = c(129910, 141122, 138781, 146204, 152269, 161624, 172863, 207214, 199730, 208912, 213125, 418, 146915, 204878, 223296, 239368, 242408),
+  Ago = c(108101, 111552, 103732, 115087, 120532, 129247, 136782, 158771, 158544, 171882, 174109, 1656, 114227, 159753, 174913, 182800, 182342),
+  Sep = c(70490, 72939, 70912, 75079, 77402, 79714, 90213, 104591, 109295, 110354, 112102, 3371, 77599, 102705, 111696, 105100, 104246),
+  Oct = c(72906, 76623, 80676, 82769, 87678, 89766, 101756, 116297, 120584, 122283, 135320, 9888, 91292, 116925, 129201, 122188, 129369),
+  Nov = c(103890, 107342, 113068, 118375, 127154, 131655, 158025, 155174, 168742, 181628, 191346, 36044, 141099, 181721, 212646, 201152, 225679),
+  Dic = c(134068, 139674, 150169, 158477, 173433, 182842, 211525, 219012, 221275, 240707, 255611, 71000, 201902, 231402, 281095, 278437, 316226)
+)
+```
+
+```{r}
+valores <- as.vector(t(base[, -1]))
+turistas <- ts(valores, start = c(2009, 1), frequency = 12)
+turistas
+```
+
+```{r}
+stopifnot(length(turistas) == 204, !anyNA(turistas), all(turistas > 0))
+write.csv(base, "Resultados/Datos_turismo_2009_2025.csv", row.names = FALSE)
+```
+
+```{r}
+summary(turistas); sd(turistas)
+```
+
+```{r}
+resumen_anual <- data.frame(
+  Anio = base$Anio,
+  Minimo = apply(base[, -1], 1, min),
+  Q1 = apply(base[, -1], 1, quantile, probs = 0.25),
+  Mediana = apply(base[, -1], 1, median),
+  Media = apply(base[, -1], 1, mean),
+  Q3 = apply(base[, -1], 1, quantile, probs = 0.75),
+  Maximo = apply(base[, -1], 1, max),
+  Desv_Estandar = apply(base[, -1], 1, sd)
+)
+
+resumen_anual[, -1] <- round(resumen_anual[, -1], 1)
+resumen_anual
+```
+
+```{r}
+base_larga <- base %>%
+  pivot_longer(
+    cols = -Anio,
+    names_to = "Mes",
+    values_to = "Llegadas"
+  )
+
+figura1 <- ggplot(base_larga, aes(x = Anio, y = Llegadas)) +
+  geom_boxplot(
+    linewidth = 0.5,
+    fill = "#D9E2F3",
+    colour = "#2F5597",
+    outlier.colour = "#2F5597",
+    outlier.size = 1.5
+  ) +
+  labs(
+    x = "Año",
+    y = "Llegadas de turistas",
+    caption = "Fuente: Instituto Costarricense de Turismo"
+  ) +
+  scale_y_continuous(
+    labels = label_number(big.mark = ","),
+    breaks = seq(0, 350000, by = 50000)
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(
+      linewidth = 0.4,
+      colour = "gray40"
+    ),
+    axis.ticks = element_line(
+      linewidth = 0.4,
+      colour = "gray40"
+    ),
+    axis.ticks.length = unit(0.15, "cm"),
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    ),
+    plot.caption = element_text(
+      hjust = 0,
+      size = 10
+    )
+  )
+```
+
+```{r}
+figura2 <- autoplot(turistas, linewidth = 0.7, colour = "#2F5597") +
+  labs(
+    x = "Año",
+    y = "Llegadas de turistas",
+    caption = "Fuente: Instituto Costarricense de Turismo"
+  ) +
+  scale_y_continuous(
+    labels = label_number(big.mark = ","), # Mostrar separador de miles con coma
+    breaks = seq(0, 350000, by = 50000) # Marcas cada 50 000 turistas
+  ) +
+    scale_x_continuous(
+    breaks = seq(2009, 2025, by = 2)
+  ) +
+  
+  # Aplicar un estilo limpio y sencillo al gráfico
+  # base_size define el tamaño base de los textos
+  theme_minimal(base_size = 12) + 
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(linewidth = 0.4, colour = "gray40"),
+    axis.ticks = element_line(linewidth = 0.4, colour = "gray40"),
+    axis.ticks.length = unit(0.15, "cm"),
+    plot.caption = element_text(hjust = 0, size = 10)
+  )
+```
+
+```{r}
+figura3 <- ggseasonplot(turistas, continuous = TRUE, linewidth = 0.7) +
+  labs(
+    title = NULL,
+    x = "Mes",
+    y = "Llegadas de turistas",
+    colour = "Año",
+    caption = "Fuente: Instituto Costarricense de Turismo"
+  ) +
+  scale_y_continuous(
+    labels = label_number(big.mark = ","),
+    breaks = seq(0, 350000, by = 50000)
+  ) +
+  scale_colour_gradient(
+    breaks = seq(2011, 2024, by = 3)
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(linewidth = 0.4, colour = "gray40"),
+    axis.ticks = element_line(linewidth = 0.4, colour = "gray40"),
+    axis.ticks.length = unit(0.15, "cm"),
+    plot.caption = element_text(hjust = 0, size = 10)
+  )
+```
+
+```{r}
+figura4 <- ggsubseriesplot(turistas) +
+  labs(
+    x = "Mes",
+    y = "Llegadas de turistas",
+    caption = "Fuente: Instituto Costarricense de Turismo"
+  ) +
+  scale_y_continuous(
+    labels = label_number(big.mark = ","),
+    breaks = seq(0, 350000, by = 50000)
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(linewidth = 0.4, colour = "gray40"),
+    axis.ticks = element_line(linewidth = 0.4, colour = "gray40"),
+    axis.ticks.length = unit(0.15, "cm"),
+    plot.caption = element_text(hjust = 0, size = 10)
+  )
+```
+
+```{r}
+figura5 <- ggAcf(turistas) +
+  labs(
+    title = NULL,
+    x = "Rezago",
+    y = "Autocorrelación",
+    caption = "Fuente: Instituto Costarricense de Turismo"
+  ) +
+  scale_x_continuous(
+    breaks = seq(3, 24, by = 3)
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(linewidth = 0.4, colour = "gray40"),
+    axis.ticks = element_line(linewidth = 0.4, colour = "gray40"),
+    axis.ticks.length = unit(0.15, "cm"),
+    plot.caption = element_text(hjust = 0, size = 10)
+  )
+```
+
+```{r}
+descomp_multiplicativa <- decompose(turistas, type = "multiplicative")
+
+#-----------------------------------------------------------------------------
+
+figura6_exploratoria <- autoplot(descomp_multiplicativa, labels = c("tendencia", "estacional", "irregular"), range.bars = TRUE) +
+  labs(
+    title = NULL,
+    x = "Año",
+    caption = "Fuente: Instituto Costarricense de Turismo"
+  ) +
+  scale_x_continuous(
+    breaks = seq(2009, 2025, by = 2)
+  ) +
+  scale_y_continuous(
+    labels = label_number(big.mark = ",")
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(linewidth = 0.4, colour = "gray40"),
+    axis.ticks = element_line(linewidth = 0.4, colour = "gray40"),
+    axis.ticks.length = unit(0.15, "cm"),
+    plot.caption = element_text(hjust = 0, size = 10)
+  )
+
+figura6_exploratoria
+```
+
+```{r}
+for (nombre in c("figura1", "figura2", "figura3", "figura4", "figura5", "figura6_exploratoria")) {
+  print(get(nombre))
+  ggsave(file.path("Figuras", paste0(nombre, ".png")), get(nombre),
+         width = 8, height = 5, dpi = 300, bg = "white")
+}
+```
+
+# Partición cronológica
+
+```{r}
+train <- window(turistas, end = c(2024, 12)) #entrenamiento
+
+test <- window(turistas, start = c(2025, 1)) #prueba
+
+length(train)
+length(test)
+```
+
+```{r}
+autoplot(train, series = "Entrenamiento") +
+  autolayer(test, series = "Prueba") +
+  labs(
+    x = "Año",
+    y = "Llegadas de turistas",
+    colour = "Conjunto de datos"
+  ) +
+  scale_y_continuous(
+    breaks = seq(0, 350000, by = 50000),
+    labels = function(x) format(x, scientific = FALSE, big.mark = ".")
+  ) +
+  theme_minimal()
+```
+
+# Suavizamiento exponencial
+
+```{r}
+ht1 <- hw(train, seasonal = "multiplicative", h = 12)
+
+ht1$model
+```
+
+```{r}
+accuracy(ht1)
+```
+
+```{r}
+checkresiduals(ht1)
+```
+
+```{r}
+ht2 <- hw(train, seasonal = "additive", h = 12)
+
+ht2$model
+
+accuracy(ht2)
+```
+
+```{r}
+checkresiduals(ht2)
+```
+
+```{r}
+ht3 <- hw(train, damped = TRUE,
+          seasonal = "multiplicative", h = 12)
+
+ht3$model
+
+accuracy(ht3)
+```
+
+```{r}
+checkresiduals(ht3)
+```
+
+```{r}
+comparacion_hw <- rbind(
+  Multiplicativo = accuracy(ht1),
+  Aditivo = accuracy(ht2),
+  Amortiguado = accuracy(ht3)
+)
+
+round(comparacion_hw, 4)
+```
+
+```{r}
+autoplot(train) +
+  autolayer(ht1$mean, series = "HW multiplicativo") +
+  autolayer(ht2$mean, series = "HW aditivo") +
+  autolayer(ht3$mean, series = "HW amortiguado") +
+  xlab("Año") +
+  ylab("Llegadas de turistas") +
+  scale_y_continuous(
+    labels = function(x) format(x, scientific = FALSE,
+                                big.mark = ".")
+  ) +
+  theme_minimal()
+```
+
+# Modelos ARIMA/SARIMA
+
+```{r}
+w <- log(train)
+plot(w)
+```
+
+```{r}
+png("Figuras/figura7.png", width = 2400, height = 1200, res = 300)
+
+par(mfrow = c(1, 2))
+
+Acf(w, main = "ACF")
+Pacf(w, main = "PACF")
+
+par(mfrow = c(1, 1))
+
+dev.off()
+# Alias para el artículo si se utilizó el nombre figura6.png.
+file.copy("Figuras/figura7.png", "Figuras/figura6.png", overwrite = TRUE)
+```
+
+```{r}
+adf.test(w)
+```
+
+```{r}
+w12 <- diff(w, lag = 12)
+
+par(mfrow = c(1, 2))
+
+Acf(w12, main = "ACF")
+Pacf(w12, main = "PACF")
+
+par(mfrow = c(1, 1))
+```
+
+```{r}
+autoplot(w) +
+  xlab("Año") +
+  ylab("Logaritmo de turistas") +
+  theme_minimal()
+
+autoplot(w12) +
+  xlab("Año") +
+  ylab("Diferencia estacional") +
+  theme_minimal()
+```
+
+```{r}
+adf.test(w12)
+```
+
+```{r}
+mod1 <- Arima(w,
+              order = c(1, 0, 0),
+              seasonal = c(0, 1, 1))
+
+summary(mod1)
+```
+
+```{r}
+mod2 <- Arima(w,
+              order = c(2, 0, 0),
+              seasonal = c(0, 1, 1))
+
+summary(mod2)
+```
+
+```{r}
+mod3 <- Arima(w,
+              order = c(2, 0, 0),
+              seasonal = c(0, 0, 0))
+
+summary(mod3)
+```
+
+```{r}
+mod4 <- Arima(w,
+              order = c(2, 0, 0),
+              seasonal = c(1, 0, 0))
+
+summary(mod4)
+```
+
+```{r}
+checkresiduals(mod1)
+checkresiduals(mod2)
+checkresiduals(mod3)
+checkresiduals(mod4)
+```
+
+```{r}
+mod5 <- auto.arima(w)
+
+summary(mod5)
+
+checkresiduals(mod5)
+```
+
+```{r}
+mod6 <- Arima(w,
+              order = c(1, 0, 1),
+              seasonal = c(0, 0, 1))
+
+summary(mod6)
+
+checkresiduals(mod6)
+```
+
+# Regresión convencional
+
+```{r}
+reg1 <- tslm(train ~ trend + season)
+
+summary(reg1)
+```
+
+```{r}
+reg2 <- tslm(train ~ trend + I(trend^2) + season)
+
+summary(reg2)
+```
+
+```{r}
+reg3 <- tslm(train ~ trend + season, lambda = 0)
+
+summary(reg3)
+```
+
+```{r}
+reg4 <- tslm(train ~ trend + I(trend^2) + season,
+             lambda = 0)
+
+summary(reg4)
+```
+
+```{r}
+checkresiduals(reg1)
+
+checkresiduals(reg2)
+
+checkresiduals(reg3)
+
+checkresiduals(reg4)
+```
+
+```{r}
+rbind(
+  reg1 = accuracy(reg1),
+  reg2 = accuracy(reg2),
+  reg3 = accuracy(reg3),
+  reg4 = accuracy(reg4)
+)
+```
+
+# Regresión dinámica e intervención
+
+```{r}
+trend <- seq_along(train) #tendencia
+season <- seasonaldummy(train) #variables indicadoras de estacionalidad
+```
+
+```{r}
+xreg <- cbind(trend, season)
+```
+
+```{r}
+din1 <- auto.arima(train, d = 0, xreg = xreg)
+
+summary(din1)
+
+checkresiduals(din1)
+```
+
+```{r}
+din2 <- auto.arima(train, d = 0,
+                   xreg = xreg,
+                   lambda = 0)
+
+summary(din2)
+
+checkresiduals(din2)
+```
+
+```{r}
+pre_covid <- window(train, end = c(2020, 2))
+
+plot(pre_covid)
+```
+
+```{r}
+trend_pre <- seq_along(pre_covid)
+
+season_pre <- seasonaldummy(pre_covid)
+
+xreg_pre <- cbind(trend_pre, season_pre)
+```
+
+```{r}
+din_pre <- auto.arima(pre_covid,
+                      d = 0,
+                      xreg = xreg_pre)
+
+summary(din_pre)
+
+checkresiduals(din_pre)
+```
+
+```{r}
+I1 <- ifelse(time(train) >= 2020 + 2/12, 1, 0)
+
+I2 <- ifelse(time(train) >= 2022, 1, 0)
+
+covid <- I1 - I2
+
+autoplot(ts(covid, start = c(2009, 1),
+            frequency = 12))
+```
+
+```{r}
+table(covid)
+```
+
+```{r}
+xreg_covid <- cbind(xreg, covid)
+
+din3 <- Arima(train,
+              order = c(1, 0, 0),
+              seasonal = c(1, 0, 0),
+              xreg = xreg_covid)
+
+summary(din3)
+
+checkresiduals(din3)
+```
+
+```{r}
+din4 <- auto.arima(train,
+                   d = 0,
+                   xreg = xreg_covid)
+
+summary(din4)
+
+checkresiduals(din4)
+```
+
+```{r}
+din5 <- auto.arima(train,
+                   d = 0,
+                   xreg = xreg_covid,
+                   lambda = 0)
+
+summary(din5)
+
+checkresiduals(din5)
+```
+
+```{r}
+tiempo <- seq_along(train)
+
+caida <- ifelse(tiempo >= 135 & tiempo <= 142, 1, 0)
+
+recuperacion <- ifelse(tiempo >= 143 & tiempo <= 156, 1, 0)
+
+table(caida)
+table(recuperacion)
+```
+
+```{r}
+xreg_covid2 <- cbind(xreg, caida, recuperacion)
+```
+
+```{r}
+din6 <- auto.arima(train,
+                   d = 0,
+                   xreg = xreg_covid2)
+
+summary(din6)
+
+checkresiduals(din6)
+```
+
+# Comparación predictiva
+
+```{r}
+finalistas <- list("Holt-Winters aditivo" = ht2, "SARIMA" = mod4,
+                   "Regresión convencional" = reg1, "Regresión dinámica" = din1)
+diagnostico <- do.call(rbind, lapply(names(finalistas), function(n) {
+  m <- finalistas[[n]]
+  lb <- checkresiduals(m, plot = FALSE)
+  sw <- shapiro.test(na.omit(as.numeric(residuals(m))))
+  data.frame(Modelo = n, Prueba = lb$method, Estadistico = unname(lb$statistic),
+             gl = unname(lb$parameter), p_autocorrelacion = lb$p.value,
+             W = unname(sw$statistic), p_normalidad = sw$p.value)
+}))
+print(diagnostico)
+```
+
+```{r}
+pron1 <- ht2
+```
+
+```{r}
+pron2 <- forecast(mod4, h = 12)
+pron2$mean <- exp(pron2$mean)
+pron2$lower <- exp(pron2$lower)
+pron2$upper <- exp(pron2$upper)
+
+pron2$x <- train
+```
+
+```{r}
+pron3 <- forecast(reg1, h = 12)
+```
+
+```{r}
+trend_test <- seq(length(train) + 1,
+                  length(train) + 12)
+
+season_test <- seasonaldummy(train, h = 12)
+
+xreg_test <- cbind(trend_test, season_test)
+
+colnames(xreg_test) <- colnames(xreg)
+
+pron4 <- forecast(din1, xreg = xreg_test, h = 12)
+```
+
+```{r}
+acc1 <- accuracy(pron1, test)["Test set", ]
+
+acc2 <- accuracy(pron2$mean, test)
+
+acc3 <- accuracy(pron3, test)["Test set", ]
+
+acc4 <- accuracy(pron4, test)["Test set", ]
+
+mase2 <- mean(abs(test - pron2$mean)) /
+  mean(abs(diff(train, lag = 12)))
+```
+
+```{r}
+comparacion <- rbind(
+  "Holt-Winters" = acc1[c("RMSE", "MAE", "MAPE", "MASE")],
+  "SARIMA" = c(acc2[1, c("RMSE", "MAE", "MAPE")],
+               MASE = mase2),
+  "Regresion" = acc3[c("RMSE", "MAE", "MAPE", "MASE")],
+  "Regresion dinamica" = acc4[c("RMSE", "MAE", "MAPE", "MASE")]
+)
+
+round(comparacion, 4)
+```
+
+
+
+```{r}
+estilo_articulo <- theme_minimal(base_size = 12) + theme(
+  panel.grid.major.x = element_blank(), panel.grid.minor = element_blank(),
+  axis.line = element_line(linewidth = 0.4, colour = "gray40"),
+  axis.ticks = element_line(linewidth = 0.4, colour = "gray40"),
+  axis.ticks.length = unit(0.15, "cm"),
+  plot.caption = element_text(hjust = 0, size = 10), legend.position = "right")
+figura8 <- autoplot(test, series = "Observado") +
+  autolayer(pron1$mean, series = "Holt-Winters") +
+  autolayer(pron2$mean, series = "SARIMA") +
+  autolayer(pron3$mean, series = "Regresión") +
+  autolayer(pron4$mean, series = "Regresión dinámica") +
+  labs(title = NULL, x = "Mes", y = "Llegadas de turistas", colour = "Modelo",
+       caption = "Fuente: Elaboración propia con datos del ICT") +
+  scale_x_continuous(breaks = as.numeric(time(test)),
+    labels = c("Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic")) +
+  scale_y_continuous(labels = scales::label_number(big.mark = ","), breaks = seq(0,400000,50000)) +
+  scale_colour_manual(values = c("Observado" = "black", "Holt-Winters" = "#E69F00",
+    "SARIMA" = "#D55E00", "Regresión" = "#009E73", "Regresión dinámica" = "#0072B2"),
+    breaks = c("Observado", "Holt-Winters", "SARIMA", "Regresión", "Regresión dinámica")) +
+  geom_line(data = data.frame(Mes = as.numeric(time(test)), Llegadas = as.numeric(test)),
+    aes(Mes, Llegadas), inherit.aes = FALSE, colour = "black", linewidth = 0.9) +
+  estilo_articulo
+figura8
+ggsave("Figuras/figura8.png", figura8, width = 10, height = 5, dpi = 300, bg = "white")
+```
+
+# Reestimación y diagnóstico final
+
+```{r}
+trend_total <- seq_along(turistas)
+
+season_total <- seasonaldummy(turistas)
+
+xreg_total <- cbind(trend_total, season_total)
+
+colnames(xreg_total) <- colnames(xreg)
+```
+
+```{r}
+modelo_final <- Arima(turistas,
+                     order = c(4, 0, 0),
+                     xreg = xreg_total)
+
+summary(modelo_final)
+checkresiduals(modelo_final)
+```
+
+```{r}
+residuos_final <- residuals(modelo_final)
+shapiro.test(residuos_final)
+png("Figuras/figura9.png", width = 2400, height = 1800, res = 300, bg = "white")
+checkresiduals(modelo_final)
+dev.off()
+```
+
+# Pronósticos para 2026
+
+```{r}
+trend_futuro <- seq(length(turistas) + 1,
+                    length(turistas) + 12)
+
+season_futuro <- seasonaldummy(turistas, h = 12)
+
+xreg_futuro <- cbind(trend_futuro, season_futuro)
+
+colnames(xreg_futuro) <- colnames(xreg_total)
+```
+
+```{r}
+pronostico_final <- forecast(modelo_final,
+                             xreg = xreg_futuro,
+                             h = 12,
+                             level = c(80, 95))
+
+pronostico_final
+```
+
+```{r}
+figura10 <- autoplot(pronostico_final) +
+  labs(title = NULL, x = "Año", y = "Llegadas de turistas",
+       caption = "Fuente: Elaboración propia con datos del ICT") +
+  scale_y_continuous(labels = scales::label_number(big.mark = ","), breaks = seq(0,450000,50000)) +
+  scale_x_continuous(breaks = seq(2009,2026,2)) +
+  guides(fill = guide_legend(title = "Intervalo de predicción")) + estilo_articulo
+figura10
+ggsave("Figuras/figura10.png", figura10, width = 10, height = 5, dpi = 300, bg = "white")
+tabla_final <- as.data.frame(pronostico_final)
+round(tabla_final, 0)
+sum(pronostico_final$mean)
+```
+
+
+
